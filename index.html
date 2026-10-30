@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<!-- 求職者管理（セレクトエールグループ）の入口ページ。
+     携帯のホーム画面に置いたとき、アイコンをロゴ・名前を「求職者管理」にするためのページ。
+     中身は GAS のアプリ（下の APP_URL）を全画面で表示しているだけ。
+     置き場所：GitHub Pages https://nekoroboman.github.io/kyushokukanri/（リポジトリ nekoroboman/kyushokukanri。2026-10-30〜）。
+     一度 Vercel（selectyell-kyushoku）に置いたが、ユーザーが Vercel に入れないため GitHub に移した
+     ログインの合言葉：アプリは入口ページの中で開くと、合言葉を postMessage でここへ渡す。
+     ここはそれをアドレス（?t=）と保存場所に持ち、次に開くときアプリに ?t= を付けて渡す
+     （iPhone のホーム画面アプリは、アプリ側〔iframe の中〕の保存場所が閉じるたびに消えるため） -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>求職者管理</title>
+<meta name="description" content="セレクトエールグループ 求職者管理">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#FFC501">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="求職者管理">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="manifest" href="manifest.json">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #FFFBEE; overflow: hidden; overscroll-behavior: none; touch-action: pan-x pan-y; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif; color: #1A1A1A; }
+  /* 読み込み中（アプリが出るまで）：ロゴと文字 */
+  .loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+  .loading img { width: 96px; height: 96px; border-radius: 22px; }
+  .loading p { margin: 0; font-size: 14px; font-weight: 700; }
+  .loading a { font-size: 13px; color: #6B6B6B; }
+  .loading a[hidden] { display: none; }
+  iframe { position: fixed; inset: 0; width: 100%; height: 100%; height: 100dvh; border: 0; background: transparent; }
+</style>
+</head>
+<body>
+<div class="loading" aria-hidden="true">
+  <img src="apple-touch-icon.png" alt="">
+  <p>読み込んでいます…</p>
+  <a id="direct" href="#" hidden>開かないときはこちら</a>
+</div>
+<iframe id="app" title="求職者管理" allow="clipboard-write"></iframe>
+<script>
+  (function () {
+    var APP_URL = 'https://script.google.com/macros/s/AKfycbxtbbS3YaYBNYNd3xLCnF1VaYAAYr8qlDBbKdAGbZZnofJegDa3EqyE7ZzxFB1Se0MiSA/exec';
+    var KEY = 'kyushoku.t';
+    var frame = document.getElementById('app');
+    var direct = document.getElementById('direct');
+    function saved() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } }
+    function save(t) { try { if (t) localStorage.setItem(KEY, t); else localStorage.removeItem(KEY); } catch (e) { /* 保存できなくても動く */ } }
+    var t = new URLSearchParams(location.search).get('t') || saved();
+    direct.href = APP_URL;
+    frame.src = APP_URL + (t ? '?t=' + encodeURIComponent(t) : '');
+    /* アプリから合言葉を受け取る（ログイン・ログアウトのたび） */
+    window.addEventListener('message', function (e) {
+      if (!/^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/.test(e.origin)) return;
+      var d = e.data || {};
+      if (d.type !== 'kyushoku-token') return;
+      var tok = String(d.t || '');
+      save(tok);
+      try { history.replaceState(null, '', location.pathname + (tok ? '?t=' + encodeURIComponent(tok) : '')); } catch (err) { /* アドレスを変えられなくても動く */ }
+    });
+    /* 10秒たっても出ないときだけ、アプリを直接開く案内を出す */
+    var timer = setTimeout(function () { direct.hidden = false; }, 10000);
+    frame.addEventListener('load', function () { clearTimeout(timer); });
+    /* iPhone は拡大の指定を無視するので、2本指の操作を止める */
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (n) {
+      document.addEventListener(n, function (e) { e.preventDefault(); }, { passive: false });
+    });
+  })();
+</script>
+</body>
+</html>
