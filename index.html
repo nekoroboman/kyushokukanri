@@ -32,7 +32,8 @@
   .loading p { margin: 0; font-size: 14px; font-weight: 700; }
   .loading a { font-size: 13px; color: #6B6B6B; }
   .loading a[hidden] { display: none; }
-  iframe { position: fixed; inset: 0; width: 100%; height: 100%; height: 100dvh; border: 0; background: transparent; }
+  iframe { position: fixed; inset: 0; width: 100%; height: 100%; height: 100dvh; border: 0; background: transparent; visibility: hidden; }
+  iframe.ready { visibility: visible; } /* アプリが動き出すまでは下の「読み込んでいます」を見せる */
 </style>
 </head>
 <body>
@@ -41,30 +42,49 @@
   <p>読み込んでいます…</p>
   <a id="direct" href="#" hidden>開かないときはこちら</a>
 </div>
-<iframe id="app" title="求職者管理" allow="clipboard-write"></iframe>
 <script>
+  /* Google のアカウントを2つ以上ログインしているブラウザだと、Google がアプリのアドレスを …/macros/u/1/s/… に変えてしまい、
+     iframe の中が「現在、ファイルを開くことができません」になる（2026-11-04 ユーザー「一部の人にそれはできないのは何で？」）。
+     → アプリが動き出した合図（合言葉の postMessage。起動時に必ず来る）が10秒来なければ、Google のログインを持ち込まない iframe
+       （credentialless。アプリは Google のログインがいらない）で開き直し、その携帯・パソコンでは次から最初からそうする。
+       credentialless の iframe の中の保存場所はその場かぎりになるが、ログインはこのページが ?t= で渡すので保てる */
   (function () {
     var APP_URL = 'https://script.google.com/macros/s/AKfycbxtbbS3YaYBNYNd3xLCnF1VaYAAYr8qlDBbKdAGbZZnofJegDa3EqyE7ZzxFB1Se0MiSA/exec';
-    var KEY = 'kyushoku.t';
-    var frame = document.getElementById('app');
+    var KEY = 'kyushoku.t', CL_KEY = 'kyushoku.cl';
+    var WAIT_MS = 10000;
+    var canCl = 'credentialless' in HTMLIFrameElement.prototype; /* Chrome。Safari は無いが、もともと Google のログインを iframe に持ち込まない */
     var direct = document.getElementById('direct');
-    function saved() { try { return localStorage.getItem(KEY) || ''; } catch (e) { return ''; } }
-    function save(t) { try { if (t) localStorage.setItem(KEY, t); else localStorage.removeItem(KEY); } catch (e) { /* 保存できなくても動く */ } }
-    var t = new URLSearchParams(location.search).get('t') || saved();
+    function saved(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+    function save(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) { /* 保存できなくても動く */ } }
+    var t = new URLSearchParams(location.search).get('t') || saved(KEY);
     direct.href = APP_URL;
-    frame.src = APP_URL + (t ? '?t=' + encodeURIComponent(t) : '');
-    /* アプリから合言葉を受け取る（ログイン・ログアウトのたび） */
+    var frame = null, alive = false, timer = null;
+    function open(cl) {
+      if (frame) frame.remove();
+      frame = document.createElement('iframe');
+      frame.id = 'app'; frame.title = '求職者管理'; frame.setAttribute('allow', 'clipboard-write');
+      if (cl) frame.credentialless = true; /* src より先に */
+      frame.src = APP_URL + (t ? '?t=' + encodeURIComponent(t) : '');
+      document.body.appendChild(frame);
+      clearTimeout(timer);
+      timer = setTimeout(function () {
+        if (alive) return;
+        if (!cl && canCl) { save(CL_KEY, '1'); open(true); return; } /* ログインを持ち込まずに開き直す */
+        frame.classList.add('ready'); direct.hidden = false; /* それでもだめなら、そのまま見せて、直接開く案内も出す */
+      }, WAIT_MS);
+    }
+    /* アプリから合言葉を受け取る（起動したとき・ログイン・ログアウトのたび） */
     window.addEventListener('message', function (e) {
       if (!/^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/.test(e.origin)) return;
       var d = e.data || {};
       if (d.type !== 'kyushoku-token') return;
+      if (!alive) { alive = true; clearTimeout(timer); frame.classList.add('ready'); }
       var tok = String(d.t || '');
-      save(tok);
+      t = tok;
+      save(KEY, tok);
       try { history.replaceState(null, '', location.pathname + (tok ? '?t=' + encodeURIComponent(tok) : '')); } catch (err) { /* アドレスを変えられなくても動く */ }
     });
-    /* 10秒たっても出ないときだけ、アプリを直接開く案内を出す */
-    var timer = setTimeout(function () { direct.hidden = false; }, 10000);
-    frame.addEventListener('load', function () { clearTimeout(timer); });
+    open(canCl && saved(CL_KEY) === '1');
     /* iPhone は拡大の指定を無視するので、2本指の操作を止める */
     ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (n) {
       document.addEventListener(n, function (e) { e.preventDefault(); }, { passive: false });
