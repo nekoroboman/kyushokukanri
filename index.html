@@ -9,7 +9,12 @@
      一度 Vercel（selectyell-kyushoku）に置いたが、ユーザーが Vercel に入れないため GitHub に移した
      ログインの合言葉：アプリは入口ページの中で開くと、合言葉を postMessage でここへ渡す。
      ここはそれをアドレス（?t=）と保存場所に持ち、次に開くときアプリに ?t= を付けて渡す
-     （iPhone のホーム画面アプリは、アプリ側〔iframe の中〕の保存場所が閉じるたびに消えるため） -->
+     （iPhone のホーム画面アプリは、アプリ側〔iframe の中〕の保存場所が閉じるたびに消えるため）
+     通知とアイコンの数字（2026-11-06 ユーザー「通知はアイコンにも番号で見せたりできる？」→「閉じていても変わる版」）：
+       ・「通知を受け取る」を押すと、この携帯の通知の宛先を作り（sw.js）、アプリに渡す → アプリがスプシ「通知の登録」に書く
+       ・アプリを開いている間は、アプリから「まだ対応していない人数」をもらってアイコンに付ける
+       ・閉じている間は、システム用PC（tools/chokuei-push-sender）が送る通知で sw.js が数字を付ける
+       ・iPhone はホーム画面から開いたときだけ（iOS 16.4 以降）。Android はアイコンの数字が出ない（通知は届く） -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>求職者管理</title>
 <meta name="description" content="セレクトエールグループ 求職者管理">
@@ -24,16 +29,43 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="manifest" href="manifest.json">
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; background: #FFFBEE; overflow: hidden; overscroll-behavior: none; touch-action: pan-x pan-y; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif; color: #1A1A1A; }
+  :root { --ink: #1A1A1A; --yellow: #FFC501; --yellow-soft: #FFF3C4; --bg: #FFFBEE; --muted: #6B6B6B; --danger: #D7263D; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); overflow: hidden; overscroll-behavior: none; touch-action: pan-x pan-y; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", Meiryo, sans-serif; color: var(--ink); }
   /* 読み込み中（アプリが出るまで）：ロゴと文字 */
   .loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
   .loading img { width: 96px; height: 96px; border-radius: 22px; }
   .loading p { margin: 0; font-size: 14px; font-weight: 700; }
-  .loading a { font-size: 13px; color: #6B6B6B; }
+  .loading a { font-size: 13px; color: var(--muted); }
   .loading a[hidden] { display: none; }
   iframe { position: fixed; inset: 0; width: 100%; height: 100%; height: 100dvh; border: 0; background: transparent; visibility: hidden; }
   iframe.ready { visibility: visible; } /* アプリが動き出すまでは下の「読み込んでいます」を見せる */
+
+  /* 「通知を受け取りますか？」（アプリの上に浮かせる。アプリのポップアップと同じ見た目） */
+  .ask { position: fixed; inset: 0; z-index: 10; background: rgba(26,26,26,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .ask[hidden] { display: none; }
+  .ask-card {
+    width: 100%; max-width: 400px; box-sizing: border-box; background: #fff; border: 2px solid var(--ink); border-radius: 20px;
+    box-shadow: 5px 5px 0 var(--ink), 0 18px 48px rgba(0,0,0,.35); padding: 20px 18px 14px; text-align: center; animation: pop .22s ease-out;
+  }
+  @keyframes pop { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+  .ask-bell { display: inline-flex; width: 56px; height: 56px; border-radius: 50%; background: var(--yellow); border: 2px solid var(--ink); align-items: center; justify-content: center; position: relative; }
+  .ask-bell b { position: absolute; top: -6px; right: -8px; min-width: 22px; height: 22px; padding: 0 5px; box-sizing: border-box; border-radius: 11px; background: var(--danger); color: #fff; font-size: 13px; line-height: 22px; border: 2px solid #fff; }
+  .ask h2 { margin: 12px 0 6px; font-size: 19px; line-height: 1.4; }
+  .ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.7; text-align: left; }
+  .ask .btn {
+    display: block; width: 100%; min-height: 50px; border: 2px solid var(--ink); border-radius: 12px; padding: 12px 16px; font: inherit; font-weight: 800; font-size: 16px;
+    cursor: pointer; background: var(--yellow); color: var(--ink); box-shadow: 3px 3px 0 var(--ink);
+  }
+  .ask .btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--ink); }
+  .ask .btn:disabled { opacity: .6; cursor: default; }
+  .ask .later { display: block; width: 100%; margin-top: 8px; padding: 10px; border: 0; background: none; font: inherit; font-size: 14px; font-weight: 700; color: var(--muted); cursor: pointer; }
+  .toast {
+    position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 11; max-width: 90vw;
+    background: var(--ink); color: var(--yellow); font-weight: 700; padding: 10px 16px; border-radius: 12px; font-size: 14px;
+  }
+  .toast.err { background: var(--danger); color: #fff; }
+  .toast[hidden], .ask-bell b[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -42,6 +74,19 @@
   <p>読み込んでいます…</p>
   <a id="direct" href="#" hidden>開かないときはこちら</a>
 </div>
+<div class="ask" id="ask" hidden>
+  <div class="ask-card" role="dialog" aria-modal="true" aria-labelledby="ask-t">
+    <span class="ask-bell" aria-hidden="true">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>
+      <b id="ask-n">2</b>
+    </span>
+    <h2 id="ask-t">通知を受け取りますか？</h2>
+    <p id="ask-p"></p>
+    <button class="btn" id="ask-yes">通知を受け取る</button>
+    <button class="later" id="ask-no">あとで</button>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script>
   /* Google のアカウントを2つ以上ログインしているブラウザだと、Google がアプリのアドレスを …/macros/u/1/s/… に変えてしまい、
      iframe の中が「現在、ファイルを開くことができません」になる（2026-11-04 ユーザー「一部の人にそれはできないのは何で？」）。
@@ -49,16 +94,24 @@
        （credentialless。アプリは Google のログインがいらない）で開き直し、その携帯・パソコンでは次から最初からそうする。
        credentialless の iframe の中の保存場所はその場かぎりになるが、ログインはこのページが ?t= で渡すので保てる */
   (function () {
-    var APP_URL = 'https://script.google.com/macros/s/AKfycbxtbbS3YaYBNYNd3xLCnF1VaYAAYr8qlDBbKdAGbZZnofJegDa3EqyE7ZzxFB1Se0MiSA/exec';
-    var KEY = 'kyushoku.t', CL_KEY = 'kyushoku.cl';
+    var PROD_APP_URL = 'https://script.google.com/macros/s/AKfycbxtbbS3YaYBNYNd3xLCnF1VaYAAYr8qlDBbKdAGbZZnofJegDa3EqyE7ZzxFB1Se0MiSA/exec';
+    /* このPCで試すとき（http://localhost:3064/kyushoku/?mock=1）は、中を見本のアプリ（にせのデータ）にする */
+    var DEV = location.hostname === 'localhost' && new URLSearchParams(location.search).get('mock') === '1';
+    var APP_URL = DEV ? location.origin + '/' : PROD_APP_URL;
+    function appOriginOk(o) { return DEV ? o === location.origin : /^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/.test(o); }
+    /* 通知の差出人の鍵（公開してよい方。tools/chokuei-push-sender/.env の VAPID_PUBLIC と同じ） */
+    var VAPID_PUBLIC = 'BLuaXefOgTg0UZmEqECNoP24YYXH6NMzyJFLSPuDji6k6w6b36zxgtIDO15baeSyTcJkG4FgEHb8C9ikvIlgIn4';
+    var KEY = 'kyushoku.t', CL_KEY = 'kyushoku.cl', SENT_KEY = 'kyushoku.pushSent', LATER_KEY = 'kyushoku.pushLater';
     var WAIT_MS = 10000;
     var canCl = 'credentialless' in HTMLIFrameElement.prototype; /* Chrome。Safari は無いが、もともと Google のログインを iframe に持ち込まない */
     var direct = document.getElementById('direct');
+    function $(id) { return document.getElementById(id); }
     function saved(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
     function save(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) { /* 保存できなくても動く */ } }
     var t = new URLSearchParams(location.search).get('t') || saved(KEY);
     direct.href = APP_URL;
     var frame = null, alive = false, timer = null;
+    var appWin = null, appOrigin = '';
     function open(cl) {
       if (frame) frame.remove();
       frame = document.createElement('iframe');
@@ -73,16 +126,142 @@
         frame.classList.add('ready'); direct.hidden = false; /* それでもだめなら、そのまま見せて、直接開く案内も出す */
       }, WAIT_MS);
     }
-    /* アプリから合言葉を受け取る（起動したとき・ログイン・ログアウトのたび） */
+    function toApp(msg) { if (appWin) try { appWin.postMessage(msg, appOrigin); } catch (e) { /* 渡せなくても動く */ } }
+
+    /* ---- 通知とアイコンの数字 ---- */
+    var UA = navigator.userAgent || '';
+    var IS_IOS = /iPhone|iPad|iPod/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
+    /* iPhone の Safari では、ホーム画面から開いたときだけ PushManager がある */
+    var PUSH_OK = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+    var swReg = null, syncedT = null, pendingSent = '', fromAsk = false;
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').then(function (r) { swReg = r; }).catch(function () { /* 置けなくてもアプリは動く */ });
+    }
+    function perm() { return PUSH_OK ? Notification.permission : 'unsupported'; }
+    function setBadge(n) {
+      if (!('setAppBadge' in navigator)) return;
+      try { (n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(function () { /* 許可がないときなど */ }); } catch (e) { /* 無視 */ }
+    }
+    function toast(msg, err) {
+      var el = $('toast');
+      el.textContent = msg; el.className = 'toast' + (err ? ' err' : ''); el.hidden = false;
+      clearTimeout(toast.t); toast.t = setTimeout(function () { el.hidden = true; }, 3500);
+    }
+    function b64ToBytes(s) {
+      var b = atob((s + '==='.slice((s.length + 3) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+      var a = new Uint8Array(b.length);
+      for (var i = 0; i < b.length; i++) a[i] = b.charCodeAt(i);
+      return a;
+    }
+    function sameKey(sub) {
+      var k = sub && sub.options && sub.options.applicationServerKey;
+      if (!k) return true; /* 分からない端末は、そのまま使う */
+      var a = new Uint8Array(k), b = b64ToBytes(VAPID_PUBLIC);
+      if (a.length !== b.length) return false;
+      for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+      return true;
+    }
+    function withTimeout(p, ms) {
+      return Promise.race([p, new Promise(function (_, ng) { setTimeout(function () { ng(new Error('timeout')); }, ms); })]);
+    }
+    /* この携帯の通知の宛先（無ければ作る。鍵が変わっていたら作り直す）。通知の許可があるときだけ呼ぶ */
+    function ensureSub() {
+      return withTimeout(navigator.serviceWorker.ready, 15000).then(function (reg) {
+        return reg.pushManager.getSubscription().then(function (sub) {
+          if (sub && sameKey(sub)) return sub;
+          return (sub ? sub.unsubscribe() : Promise.resolve()).then(function () {
+            return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID_PUBLIC) });
+          });
+        });
+      });
+    }
+    function tellApp(sub) { toApp({ type: 'kyushoku-push-state', supported: PUSH_OK, permission: perm(), endpoint: sub ? sub.endpoint : '' }); }
+    /* 宛先をアプリに渡して、スプシに書いてもらう（同じ宛先・同じ人なら1日1回だけ） */
+    function sendSub(sub, force) {
+      var mark = sub.endpoint + '|' + String(t).slice(-16) + '|' + new Date().toDateString();
+      if (!force && saved(SENT_KEY) === mark) return;
+      pendingSent = mark;
+      toApp({ type: 'kyushoku-push-sub', sub: sub.toJSON() });
+    }
+    /* アプリが動き出したとき・ログイン／ログアウトしたとき */
+    function syncPush() {
+      if (syncedT === t) return;
+      syncedT = t;
+      if (!t) { setBadge(0); save(SENT_KEY, ''); tellApp(null); return; }
+      if (!PUSH_OK) { tellApp(null); return; }
+      if (Notification.permission === 'granted') {
+        ensureSub().then(function (sub) { tellApp(sub); sendSub(sub, false); }).catch(function () { tellApp(null); });
+        return;
+      }
+      tellApp(null);
+      var later = Number(saved(LATER_KEY) || 0);
+      if (Notification.permission === 'default' && Date.now() - later > 7 * 86400000) {
+        setTimeout(function () { if (t && Notification.permission === 'default' && $('ask').hidden) showAsk(); }, 1500);
+      }
+    }
+    function showAsk() {
+      var denied = PUSH_OK && Notification.permission === 'denied';
+      $('ask-t').textContent = denied ? '通知が止まっています' : '通知を受け取りますか？';
+      $('ask-p').textContent = denied
+        ? (IS_IOS ? 'iPhoneの「設定」→「通知」→「求職者管理」で、「通知を許可」をオンにしてください。'
+                  : 'ブラウザの「サイトの設定」で、このページの通知を「許可」にしてください。')
+        : '新しく担当になったら、通知でお知らせします。' + (IS_IOS ? 'ホーム画面のアイコンには、まだ対応していない人数が出ます。' : '');
+      $('ask-yes').hidden = denied;
+      $('ask-n').hidden = denied || !IS_IOS; /* アイコンの数字の見本（数字が出るのは iPhone だけ） */
+      $('ask-yes').disabled = false; $('ask-yes').textContent = '通知を受け取る';
+      $('ask-no').textContent = denied ? '閉じる' : 'あとで';
+      $('ask').hidden = false;
+    }
+    function hideAsk() { $('ask').hidden = true; }
+    $('ask-no').addEventListener('click', function () {
+      if (Notification.permission === 'default') save(LATER_KEY, String(Date.now())); /* 7日たったらまた聞く */
+      hideAsk();
+    });
+    $('ask-yes').addEventListener('click', function () {
+      var btn = this;
+      btn.disabled = true; btn.textContent = '設定しています…';
+      /* 押した直後に許可を聞く（iPhone は押した流れの中でしか聞けない） */
+      var asked = Notification.requestPermission();
+      Promise.resolve(asked).then(function (p) {
+        if (p !== 'granted') { hideAsk(); if (p === 'denied') showAsk(); return; }
+        return ensureSub().then(function (sub) {
+          hideAsk();
+          fromAsk = true;
+          tellApp(sub);
+          sendSub(sub, true);
+        });
+      }).catch(function () {
+        hideAsk();
+        toast('通知の設定ができませんでした。もう一度お試しください', true);
+      });
+    });
+
+    /* アプリからの知らせ（合言葉・アイコンの数字・通知の設定） */
     window.addEventListener('message', function (e) {
-      if (!/^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/.test(e.origin)) return;
+      if (!appOriginOk(e.origin)) return;
       var d = e.data || {};
-      if (d.type !== 'kyushoku-token') return;
-      if (!alive) { alive = true; clearTimeout(timer); frame.classList.add('ready'); }
-      var tok = String(d.t || '');
-      t = tok;
-      save(KEY, tok);
-      try { history.replaceState(null, '', location.pathname + (tok ? '?t=' + encodeURIComponent(tok) : '')); } catch (err) { /* アドレスを変えられなくても動く */ }
+      if (d.type === 'kyushoku-token') {
+        appWin = e.source; appOrigin = e.origin;
+        if (!alive) {
+          alive = true; clearTimeout(timer); frame.classList.add('ready');
+          if (swReg && swReg.getNotifications) swReg.getNotifications().then(function (ns) { ns.forEach(function (n) { n.close(); }); }).catch(function () {}); /* 開いたら、出ている通知は片付ける */
+        }
+        var tok = String(d.t || '');
+        t = tok;
+        save(KEY, tok);
+        var q = [].concat(DEV ? ['mock=1'] : [], tok ? ['t=' + encodeURIComponent(tok)] : []).join('&');
+        try { history.replaceState(null, '', location.pathname + (q ? '?' + q : '')); } catch (err) { /* アドレスを変えられなくても動く */ }
+        syncPush();
+        return;
+      }
+      if (e.source !== appWin) return;
+      if (d.type === 'kyushoku-badge') { setBadge(t ? Number(d.n) || 0 : 0); return; }
+      if (d.type === 'kyushoku-push-open') { if (PUSH_OK) showAsk(); return; }
+      if (d.type === 'kyushoku-push-saved') {
+        if (d.ok) { save(SENT_KEY, pendingSent); if (fromAsk) toast('通知を受け取る設定にしました'); }
+        else if (fromAsk) toast(d.error || '通知の設定ができませんでした', true);
+        fromAsk = false;
+      }
     });
     open(canCl && saved(CL_KEY) === '1');
     /* iPhone は拡大の指定を無視するので、2本指の操作を止める */
