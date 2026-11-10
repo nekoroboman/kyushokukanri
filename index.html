@@ -237,20 +237,21 @@
     });
 
     /* ---- 端末の詳しい名前（スプシ「ログイン記録」「通知の登録」の「端末」に入る。2026-11-10 ユーザー「端末に携帯の種類までわかったりする？」）
-       iPhone：機種はウェブに教えてもらえないので、画面の大きさから推定（「画面表示の拡大」にしていると外れる → 画面の大きさだけ出る）
+       iPhone：機種はウェブに教えてもらえない。前は画面の大きさから推定していたが、同じ大きさの機種がまとめて出るので
+               ユーザー「なんで色んな奴入ってるの。無理なら消していいよ。OSだけで大丈夫」（2026-11-10）→ iOS の版だけにした。
+               iOS 26 からは、ブラウザが iOS の版を「18.6」などに止めて出すので、18.6 以上は「18.6以降」とする（26 かどうか分からない）
        Android（Chrome）：機種の型番と Android の版が分かる。型番 → 名前はアプリ側（スプシ「端末の名前」タブ）で
-       アプリへは「種類|機種|版や大きさ」の形で渡す（例 iPhone|12・13・14・16e|390x844@3 ／ Android|SM-N970F|14） ---- */
-    var IPHONE_SIZES = {
-      '320x568@2': 'SE（第1世代）', '375x667@2': 'SE（第2・第3世代）・8', '414x736@3': '8 Plus',
-      '375x812@3': 'X・XS・11 Pro', '414x896@2': 'XR・11', '414x896@3': 'XS Max・11 Pro Max', '360x780@3': '12 mini・13 mini',
-      '390x844@3': '12・13・14・16e', '428x926@3': '12 Pro Max・13 Pro Max・14 Plus',
-      '393x852@3': '14 Pro・15・16', '430x932@3': '14 Pro Max・15 Plus・16 Plus',
-      '402x874@3': '16 Pro・17', '440x956@3': '16 Pro Max・17 Pro Max', '420x912@3': 'Air'
-    };
+       アプリへは「種類|機種|版」の形で渡す（例 iPhone|iOS|17.5 ／ iPhone|iOS|18.6+ ／ Android|SM-N970F|14） ---- */
+    function iosVersion() {
+      var v = UA.match(/Version\/(\d+)(?:\.(\d+))?/), m = UA.match(/OS (\d+)_(\d+)/);
+      if (v && Number(v[1]) >= 26) return v[1] + (v[2] && v[2] !== '0' ? '.' + v[2] : ''); /* Safari の版＝iOS の版（26 以降） */
+      if (!m) return '';
+      if (Number(m[1]) === 18 && Number(m[2]) >= 6) return '18.6+'; /* 本当の 18.6〜18.7 か、止められた 26 以降 */
+      return Number(m[1]) + '.' + Number(m[2]);
+    }
     function deviceInfo() {
-      var sw = Math.min(screen.width, screen.height), sh = Math.max(screen.width, screen.height), r = Math.round(window.devicePixelRatio || 1);
-      if (/iPhone|iPod/.test(UA)) { var k = sw + 'x' + sh + '@' + r; return Promise.resolve(['iPhone', IPHONE_SIZES[k] || '', k].join('|')); }
-      if (IS_IOS) return Promise.resolve('iPad||');
+      if (/iPhone|iPod/.test(UA)) return Promise.resolve(['iPhone', 'iOS', iosVersion()].join('|'));
+      if (IS_IOS) return Promise.resolve(['iPad', 'iOS', iosVersion()].join('|'));
       if (/Android/.test(UA)) {
         var m = UA.match(/Android ([\d.]+);\s*([^;)]+)/);
         var model = m && m[2].trim() !== 'K' ? m[2].trim() : '', ver = m ? m[1].split('.')[0] : '';
