@@ -236,6 +236,33 @@
       });
     });
 
+    /* ---- 端末の詳しい名前（スプシ「ログイン記録」「通知の登録」の「端末」に入る。2026-11-10 ユーザー「端末に携帯の種類までわかったりする？」）
+       iPhone：機種はウェブに教えてもらえないので、画面の大きさから推定（「画面表示の拡大」にしていると外れる → 画面の大きさだけ出る）
+       Android（Chrome）：機種の型番と Android の版が分かる。型番 → 名前はアプリ側（スプシ「端末の名前」タブ）で
+       アプリへは「種類|機種|版や大きさ」の形で渡す（例 iPhone|12・13・14・16e|390x844@3 ／ Android|SM-N970F|14） ---- */
+    var IPHONE_SIZES = {
+      '320x568@2': 'SE（第1世代）', '375x667@2': 'SE（第2・第3世代）・8', '414x736@3': '8 Plus',
+      '375x812@3': 'X・XS・11 Pro', '414x896@2': 'XR・11', '414x896@3': 'XS Max・11 Pro Max', '360x780@3': '12 mini・13 mini',
+      '390x844@3': '12・13・14・16e', '428x926@3': '12 Pro Max・13 Pro Max・14 Plus',
+      '393x852@3': '14 Pro・15・16', '430x932@3': '14 Pro Max・15 Plus・16 Plus',
+      '402x874@3': '16 Pro・17', '440x956@3': '16 Pro Max・17 Pro Max', '420x912@3': 'Air'
+    };
+    function deviceInfo() {
+      var sw = Math.min(screen.width, screen.height), sh = Math.max(screen.width, screen.height), r = Math.round(window.devicePixelRatio || 1);
+      if (/iPhone|iPod/.test(UA)) { var k = sw + 'x' + sh + '@' + r; return Promise.resolve(['iPhone', IPHONE_SIZES[k] || '', k].join('|')); }
+      if (IS_IOS) return Promise.resolve('iPad||');
+      if (/Android/.test(UA)) {
+        var m = UA.match(/Android ([\d.]+);\s*([^;)]+)/);
+        var model = m && m[2].trim() !== 'K' ? m[2].trim() : '', ver = m ? m[1].split('.')[0] : '';
+        var uad = navigator.userAgentData;
+        if (!uad || !uad.getHighEntropyValues) return Promise.resolve(['Android', model, ver].join('|'));
+        return withTimeout(uad.getHighEntropyValues(['model', 'platformVersion']), 1500).then(function (v) {
+          return ['Android', v.model || model, String(v.platformVersion || '').split('.')[0] || ver].join('|');
+        }).catch(function () { return ['Android', model, ver].join('|'); });
+      }
+      return Promise.resolve(['パソコン', /Windows/.test(UA) ? 'Windows' : /Mac/.test(UA) ? 'Mac' : '', ''].join('|'));
+    }
+
     /* アプリからの知らせ（合言葉・アイコンの数字・通知の設定） */
     window.addEventListener('message', function (e) {
       if (!appOriginOk(e.origin)) return;
@@ -244,6 +271,7 @@
         appWin = e.source; appOrigin = e.origin;
         if (!alive) {
           alive = true; clearTimeout(timer); frame.classList.add('ready');
+          deviceInfo().then(function (dv) { toApp({ type: 'kyushoku-device', dv: dv }); }); /* 端末の詳しい名前（ログイン記録用） */
           if (swReg && swReg.getNotifications) swReg.getNotifications().then(function (ns) { ns.forEach(function (n) { n.close(); }); }).catch(function () {}); /* 開いたら、出ている通知は片付ける */
         }
         var tok = String(d.t || '');
